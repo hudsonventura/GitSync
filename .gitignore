@@ -1,0 +1,11 @@
+/data/
+*.user
+*.suo
+.vs/
+.idea/
+*.swp
+*.sln.docstates
+src/bin/*
+src/obj/*
+.codex
+.env

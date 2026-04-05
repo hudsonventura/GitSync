@@ -1,0 +1,11 @@
+services:
+  gitsync:
+    build: 
+      context: .
+      dockerfile: ./src/Dockerfile
+    container_name: gitsync
+    env_file:
+      - .env
+    volumes:
+      - ./repos_data:/data/repos
+    restart: unless-stopped
