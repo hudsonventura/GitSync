@@ -4,8 +4,9 @@ using Microsoft.Extensions.Logging;
 namespace GitSync.Services;
 
 /// <summary>
-/// Handles git clone/fetch/push mirror operations via the git CLI.
-/// Uses bare repositories to perform efficient mirroring.
+/// Handles git clone/fetch/push synchronization via the git CLI.
+/// Uses a standard local clone so repositories can be fetched from one remote
+/// and pushed explicitly to the other.
 /// </summary>
 public class GitMirrorService
 {
@@ -26,17 +27,18 @@ public class GitMirrorService
 
     /// <summary>
     /// Mirrors a repository between two remotes bidirectionally.
-    /// Clones as bare if not already cloned, then fetches from both remotes and pushes to both.
+    /// Clones normally if not already cloned, then fetches from both remotes,
+    /// updates local branches from the fetched refs, and pushes branches/tags to both sides.
     /// </summary>
     public async Task MirrorAsync(string repoName, string remoteAUrl, string remoteBUrl)
     {
-        var repoPath = Path.Combine(_reposPath, $"{repoName}.git");
+        var repoPath = Path.Combine(_reposPath, repoName);
 
         if (!Directory.Exists(repoPath))
         {
             // Initial clone from remote A
-            _logger.LogInformation("[{Repo}] Cloning bare repository from remote A...", repoName);
-            await RunGitAsync(_reposPath, "clone", "--bare", remoteAUrl, $"{repoName}.git");
+            _logger.LogInformation("[{Repo}] Cloning repository from remote A...", repoName);
+            await RunGitAsync(_reposPath, "clone", remoteAUrl, repoName);
 
             // Add remote B
             _logger.LogInformation("[{Repo}] Adding remote B...", repoName);
@@ -49,12 +51,12 @@ public class GitMirrorService
 
         // Fetch from both remotes
         _logger.LogInformation("[{Repo}] Fetching from remote A (origin)...", repoName);
-        await RunGitAsync(repoPath, "fetch", "--prune", "origin", "+refs/*:refs/*");
+        await RunGitAsync(repoPath, "fetch", "--prune", "origin", "+refs/heads/*:refs/remotes/origin/*", "+refs/tags/*:refs/tags/*");
 
         _logger.LogInformation("[{Repo}] Fetching from remote B...", repoName);
         try
         {
-            await RunGitAsync(repoPath, "fetch", "--prune", "remoteB", "+refs/*:refs/*");
+            await RunGitAsync(repoPath, "fetch", "--prune", "remoteB", "+refs/heads/*:refs/remotes/remoteB/*", "+refs/tags/*:refs/tags/*");
         }
         catch (Exception ex)
         {
@@ -62,12 +64,14 @@ public class GitMirrorService
             _logger.LogWarning("[{Repo}] Fetch from remote B failed (may be empty): {Message}", repoName, ex.Message);
         }
 
+        await UpdateLocalBranchesAsync(repoPath);
+
         // Push to both remotes
         _logger.LogInformation("[{Repo}] Pushing to remote A (origin)...", repoName);
-        await RunGitAsync(repoPath, "push", "--mirror", remoteAUrl);
+        await PushAllRefsAsync(repoPath, "origin");
 
         _logger.LogInformation("[{Repo}] Pushing to remote B...", repoName);
-        await RunGitAsync(repoPath, "push", "--mirror", remoteBUrl);
+        await PushAllRefsAsync(repoPath, "remoteB");
 
         _logger.LogInformation("[{Repo}] Mirror sync complete.", repoName);
     }
@@ -83,6 +87,80 @@ public class GitMirrorService
             // Remote might not exist yet, try adding it
             await RunGitAsync(repoPath, "remote", "add", remoteName, url);
         }
+    }
+
+    private async Task UpdateLocalBranchesAsync(string repoPath)
+    {
+        var branchNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        await RunGitAsync(repoPath, "checkout", "--detach");
+
+        foreach (var remoteName in new[] { "origin", "remoteB" })
+        {
+            var output = await RunGitAsync(repoPath, "for-each-ref", $"refs/remotes/{remoteName}", "--format=%(refname:strip=3)");
+            foreach (var branchName in output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                if (!string.Equals(branchName, "HEAD", StringComparison.OrdinalIgnoreCase))
+                {
+                    branchNames.Add(branchName);
+                }
+            }
+        }
+
+        foreach (var branchName in branchNames)
+        {
+            var sourceRef = await ResolveSourceRefAsync(repoPath, branchName);
+
+            if (sourceRef is null)
+            {
+                continue;
+            }
+
+            if (await BranchExistsAsync(repoPath, branchName))
+            {
+                await RunGitAsync(repoPath, "branch", "--force", branchName, sourceRef);
+            }
+            else
+            {
+                await RunGitAsync(repoPath, "branch", "--track", branchName, sourceRef);
+            }
+        }
+    }
+
+    private async Task<bool> BranchExistsAsync(string repoPath, string branchName)
+    {
+        try
+        {
+            await RunGitAsync(repoPath, "show-ref", "--verify", "--quiet", $"refs/heads/{branchName}");
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private async Task<string?> ResolveSourceRefAsync(string repoPath, string branchName)
+    {
+        foreach (var candidate in new[] { $"origin/{branchName}", $"remoteB/{branchName}" })
+        {
+            try
+            {
+                await RunGitAsync(repoPath, "show-ref", "--verify", "--quiet", $"refs/remotes/{candidate}");
+                return candidate;
+            }
+            catch
+            {
+                // Try next candidate.
+            }
+        }
+
+        return null;
+    }
+
+    private async Task PushAllRefsAsync(string repoPath, string remoteName)
+    {
+        await RunGitAsync(repoPath, "push", remoteName, "--all");
+        await RunGitAsync(repoPath, "push", remoteName, "--tags");
     }
 
     private async Task<string> RunGitAsync(string workingDirectory, params string[] args)

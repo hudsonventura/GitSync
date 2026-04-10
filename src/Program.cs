@@ -9,12 +9,12 @@ using dotenv.net;
 DotEnv.Load();
 
 // ===== Configuration from environment variables =====
-var providerAType = GetRequiredEnv("PROVIDER_A_TYPE");   // github, gitea, gitlab
+var providerAType = GetRequiredEnv("PROVIDER_A_TYPE");   // github, gitea, gitlab, azuredevops
 var providerAUrl = Environment.GetEnvironmentVariable("PROVIDER_A_URL") ?? "";
 var providerAToken = GetRequiredEnv("PROVIDER_A_TOKEN");
 var providerAUsername = GetRequiredEnv("PROVIDER_A_USERNAME");
 
-var providerBType = GetRequiredEnv("PROVIDER_B_TYPE");   // github, gitea, gitlab
+var providerBType = GetRequiredEnv("PROVIDER_B_TYPE");   // github, gitea, gitlab, azuredevops
 var providerBUrl = Environment.GetEnvironmentVariable("PROVIDER_B_URL") ?? "";
 var providerBToken = GetRequiredEnv("PROVIDER_B_TOKEN");
 var providerBUsername = GetRequiredEnv("PROVIDER_B_USERNAME");
@@ -119,6 +119,9 @@ static IGitProvider CreateProvider(
         "gitlab" => new GitLabProvider(httpClient, token, username,
             !string.IsNullOrWhiteSpace(url) ? url : throw new InvalidOperationException($"'{label}': PROVIDER_*_URL is required for GitLab"),
             loggerFactory.CreateLogger<GitLabProvider>()),
-        _ => throw new InvalidOperationException($"Unknown provider type: '{type}'. Supported: github, gitea, gitlab")
+        "azuredevops" => new AzureDevOpsProvider(httpClient, token, username,
+            !string.IsNullOrWhiteSpace(url) ? url : throw new InvalidOperationException($"'{label}': PROVIDER_*_URL is required for Azure DevOps"),
+            loggerFactory.CreateLogger<AzureDevOpsProvider>()),
+        _ => throw new InvalidOperationException($"Unknown provider type: '{type}'. Supported: github, gitea, gitlab, azuredevops")
     };
 }

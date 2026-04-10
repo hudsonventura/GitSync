@@ -1,11 +1,11 @@
 # GitSync
 
-A .NET 8 console application that **bidirectionally mirrors** git repositories between platforms (GitHub, Gitea, GitLab). It replicates all repositories — public and private — preserving their visibility, and automatically creates new repositories on the other side when they appear.
+A .NET console application that **bidirectionally mirrors** git repositories between platforms (GitHub, Gitea, GitLab, Azure DevOps). It replicates all repositories — public and private — preserving their visibility when the provider supports per-repository visibility, and automatically creates new repositories on the other side when they appear.
 
 ## Features
 
 - **Bidirectional sync**: repositories are mirrored in both directions
-- **Multi-platform**: supports GitHub, Gitea, and GitLab
+- **Multi-platform**: supports GitHub, Gitea, GitLab, and Azure DevOps
 - **Preserves visibility**: public repos stay public, private repos stay private
 - **Auto-create**: new repositories are automatically created on the other provider
 - **Full mirror**: all branches, tags, and refs are synchronized
@@ -77,6 +77,20 @@ Provider A (e.g., GitHub)  <──────>  GitSync  <──────>  
 4. Click **"Create personal access token"**
 5. **Copy the token immediately**
 
+### Azure DevOps
+
+1. Open Azure DevOps and go to **User settings** → **Personal access tokens**
+2. Click **"New Token"**
+3. Configure the token:
+   - **Name**: `GitSync`
+   - **Organization**: choose the target organization
+   - **Expiration**: set as desired
+   - **Scopes**:
+     - ✅ **Code**: Read, write, and manage
+     - ✅ **Project and Team**: Read
+4. Create the token
+5. **Copy the token immediately**
+
 ---
 
 ## Configuration
@@ -85,19 +99,21 @@ All configuration is done via environment variables:
 
 | Variable | Required | Description | Example |
 |---|---|---|---|
-| `PROVIDER_A_TYPE` | ✅ | Provider type | `github`, `gitea`, `gitlab` |
-| `PROVIDER_A_URL` | For Gitea/GitLab | Base URL of the instance | `https://gitea.example.com` |
+| `PROVIDER_A_TYPE` | ✅ | Provider type | `github`, `gitea`, `gitlab`, `azuredevops` |
+| `PROVIDER_A_URL` | For Gitea/GitLab/Azure DevOps | Base URL of the instance or Azure DevOps project URL | `https://gitea.example.com` |
 | `PROVIDER_A_TOKEN` | ✅ | Access token | `ghp_xxxxxxxxxxxx` |
-| `PROVIDER_A_USERNAME` | ✅ | Username on the provider | `myuser` |
-| `PROVIDER_B_TYPE` | ✅ | Provider type | `github`, `gitea`, `gitlab` |
-| `PROVIDER_B_URL` | For Gitea/GitLab | Base URL of the instance | `https://gitlab.example.com` |
+| `PROVIDER_A_USERNAME` | ✅ | Username on the provider. For Azure DevOps, any valid username/email for Git HTTPS auth | `myuser` |
+| `PROVIDER_B_TYPE` | ✅ | Provider type | `github`, `gitea`, `gitlab`, `azuredevops` |
+| `PROVIDER_B_URL` | For Gitea/GitLab/Azure DevOps | Base URL of the instance or Azure DevOps project URL | `https://gitlab.example.com` |
 | `PROVIDER_B_TOKEN` | ✅ | Access token | `glpat-xxxxxxxxxxxx` |
-| `PROVIDER_B_USERNAME` | ✅ | Username on the provider | `myuser` |
+| `PROVIDER_B_USERNAME` | ✅ | Username on the provider. For Azure DevOps, any valid username/email for Git HTTPS auth | `myuser` |
 | `SYNC_INTERVAL_SECONDS` | No | Interval between syncs (default: `300`) | `600` |
 | `REPOS_PATH` | No | Path to store bare repos (default: `/data/repos`) | `/tmp/repos` |
 | `LOG_LEVEL` | No | Log level (default: `Information`) | `Debug` |
 
-> **Note**: `PROVIDER_A_URL` is not required for GitHub since it always uses `api.github.com`. For Gitea and GitLab, you must provide the full base URL of your instance.
+> **Note**: `PROVIDER_A_URL` is not required for GitHub since it always uses `api.github.com`. For Gitea and GitLab, provide the instance base URL. For Azure DevOps, provide the full project URL, for example `https://dev.azure.com/myorg/myproject`.
+>
+> **Azure DevOps visibility note**: repository visibility is inherited from the Azure DevOps project. GitSync cannot force a repository to be public or private independently inside Azure DevOps.
 
 ---
 
@@ -224,6 +240,18 @@ PROVIDER_B_TYPE=gitlab
 PROVIDER_B_URL=https://gitlab.myserver.com
 PROVIDER_B_TOKEN=glpat-xxxxxxxxxxxx
 PROVIDER_B_USERNAME=johndoe
+```
+
+### GitHub ↔ Azure DevOps
+```bash
+PROVIDER_A_TYPE=github
+PROVIDER_A_TOKEN=ghp_abc123
+PROVIDER_A_USERNAME=johndoe
+
+PROVIDER_B_TYPE=azuredevops
+PROVIDER_B_URL=https://dev.azure.com/myorg/myproject
+PROVIDER_B_TOKEN=azdopatxxxxxxxx
+PROVIDER_B_USERNAME=johndoe@company.com
 ```
 
 ---
