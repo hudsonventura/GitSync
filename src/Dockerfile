@@ -2,11 +2,11 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
-COPY *.csproj .
-RUN dotnet restore
+COPY src/GitSync.csproj ./src/
+RUN dotnet restore ./src/GitSync.csproj
 
-COPY . .
-RUN dotnet publish -c Release -o /app/publish --no-restore
+COPY src/. ./src/
+RUN dotnet publish ./src/GitSync.csproj -c Release -o /app/publish --no-restore
 
 # Runtime stage
 FROM mcr.microsoft.com/dotnet/runtime:10.0 AS runtime
@@ -19,8 +19,6 @@ RUN apt-get update && \
 WORKDIR /app
 COPY --from=build /app/publish .
 
-# Create default repos directory
-RUN mkdir -p /data/repos
 
 ENV REPOS_PATH=/data/repos
 ENV SYNC_INTERVAL_SECONDS=300

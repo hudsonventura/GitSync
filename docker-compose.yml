@@ -7,5 +7,5 @@ services:
     env_file:
       - .env
     volumes:
-      - ./repos_data:/data/repos
+      - ./data/repos:/data/repos
     restart: unless-stopped
