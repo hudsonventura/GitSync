@@ -75,7 +75,7 @@ while (!cts.Token.IsCancellationRequested)
     }
     catch (Exception ex)
     {
-        logger.LogError(ex, "Sync cycle failed");
+        logger.LogError(ex, "Sync cycle failed: {Error}", ex.Message);
     }
 
     try

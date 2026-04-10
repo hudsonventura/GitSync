@@ -28,7 +28,7 @@ public class GitMirrorService
     /// <summary>
     /// Mirrors a repository between two remotes bidirectionally.
     /// Clones normally if not already cloned, then fetches from both remotes,
-    /// updates local branches from the fetched refs, and pushes branches/tags to both sides.
+    /// reconciles branch tips from the fetched refs, and pushes branches/tags to both sides.
     /// </summary>
     public async Task MirrorAsync(string repoName, string remoteAUrl, string remoteBUrl)
     {
@@ -64,7 +64,7 @@ public class GitMirrorService
             _logger.LogWarning("[{Repo}] Fetch from remote B failed (may be empty): {Message}", repoName, ex.Message);
         }
 
-        await UpdateLocalBranchesAsync(repoPath);
+        await SynchronizeBranchesAsync(repoPath);
 
         // Push to both remotes
         _logger.LogInformation("[{Repo}] Pushing to remote A (origin)...", repoName);
@@ -89,48 +89,58 @@ public class GitMirrorService
         }
     }
 
-    private async Task UpdateLocalBranchesAsync(string repoPath)
+    private async Task SynchronizeBranchesAsync(string repoPath)
     {
-        var branchNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        await RunGitAsync(repoPath, "checkout", "--detach");
-
-        foreach (var remoteName in new[] { "origin", "remoteB" })
+        var hasHeadCommit = await HasHeadCommitAsync(repoPath);
+        if (hasHeadCommit)
         {
-            var output = await RunGitAsync(repoPath, "for-each-ref", $"refs/remotes/{remoteName}", "--format=%(refname:strip=3)");
-            foreach (var branchName in output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-            {
-                if (!string.Equals(branchName, "HEAD", StringComparison.OrdinalIgnoreCase))
-                {
-                    branchNames.Add(branchName);
-                }
-            }
+            await RunGitAsync(repoPath, "checkout", "--detach");
         }
 
-        foreach (var branchName in branchNames)
+        var currentBranch = await GetCurrentBranchNameAsync(repoPath);
+        var branchesByRemote = await GetRemoteBranchesAsync(repoPath);
+        var desiredBranches = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var branchName in branchesByRemote.Keys)
         {
-            var sourceRef = await ResolveSourceRefAsync(repoPath, branchName);
+            var sourceRef = await ResolveBranchSourceRefAsync(repoPath, branchName, branchesByRemote[branchName]);
 
             if (sourceRef is null)
             {
                 continue;
             }
 
-            if (await BranchExistsAsync(repoPath, branchName))
+            await RunGitAsync(repoPath, "branch", "--force", branchName, sourceRef);
+            desiredBranches[branchName] = sourceRef;
+        }
+
+        if (!hasHeadCommit && desiredBranches.Count > 0)
+        {
+            var branchToCheckout = desiredBranches.ContainsKey(currentBranch ?? string.Empty)
+                ? currentBranch!
+                : desiredBranches.Keys.OrderBy(name => name, StringComparer.OrdinalIgnoreCase).First();
+
+            _logger.LogInformation("Checking out branch {Branch} to initialize local repository state", branchToCheckout);
+            await RunGitAsync(repoPath, "checkout", branchToCheckout);
+            currentBranch = branchToCheckout;
+        }
+
+        var localBranchesOutput = await RunGitAsync(repoPath, "for-each-ref", "refs/heads", "--format=%(refname:strip=2)");
+        foreach (var localBranch in localBranchesOutput.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (!desiredBranches.ContainsKey(localBranch))
             {
-                await RunGitAsync(repoPath, "branch", "--force", branchName, sourceRef);
-            }
-            else
-            {
-                await RunGitAsync(repoPath, "branch", "--track", branchName, sourceRef);
+                _logger.LogInformation("Deleting stale local branch {Branch}", localBranch);
+                await RunGitAsync(repoPath, "branch", "--delete", "--force", localBranch);
             }
         }
     }
 
-    private async Task<bool> BranchExistsAsync(string repoPath, string branchName)
+    private async Task<bool> HasHeadCommitAsync(string repoPath)
     {
         try
         {
-            await RunGitAsync(repoPath, "show-ref", "--verify", "--quiet", $"refs/heads/{branchName}");
+            await RunGitAsync(repoPath, "rev-parse", "--verify", "HEAD");
             return true;
         }
         catch
@@ -139,27 +149,133 @@ public class GitMirrorService
         }
     }
 
-    private async Task<string?> ResolveSourceRefAsync(string repoPath, string branchName)
+    private async Task<string?> GetCurrentBranchNameAsync(string repoPath)
     {
-        foreach (var candidate in new[] { $"origin/{branchName}", $"remoteB/{branchName}" })
+        try
         {
-            try
+            var branchName = await RunGitAsync(repoPath, "branch", "--show-current");
+            var normalized = branchName.Trim();
+            return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private async Task<Dictionary<string, Dictionary<string, string>>> GetRemoteBranchesAsync(string repoPath)
+    {
+        var branchesByRemote = new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var remoteName in new[] { "origin", "remoteB" })
+        {
+            var output = await RunGitAsync(
+                repoPath,
+                "for-each-ref",
+                $"refs/remotes/{remoteName}",
+                "--format=%(refname:strip=3) %(objectname)");
+
+            foreach (var line in output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
             {
-                await RunGitAsync(repoPath, "show-ref", "--verify", "--quiet", $"refs/remotes/{candidate}");
-                return candidate;
-            }
-            catch
-            {
-                // Try next candidate.
+                var separatorIndex = line.IndexOf(' ');
+                if (separatorIndex <= 0)
+                {
+                    continue;
+                }
+
+                var branchName = line[..separatorIndex];
+                if (string.Equals(branchName, "HEAD", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                var commitSha = line[(separatorIndex + 1)..].Trim();
+                if (!string.IsNullOrWhiteSpace(commitSha))
+                {
+                    if (!branchesByRemote.TryGetValue(branchName, out var remotes))
+                    {
+                        remotes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                        branchesByRemote[branchName] = remotes;
+                    }
+
+                    remotes[remoteName] = commitSha;
+                }
             }
         }
 
-        return null;
+        return branchesByRemote;
+    }
+
+    private async Task<string?> ResolveBranchSourceRefAsync(
+        string repoPath,
+        string branchName,
+        Dictionary<string, string> branchByRemote)
+    {
+        var hasOrigin = branchByRemote.TryGetValue("origin", out _);
+        var hasRemoteB = branchByRemote.TryGetValue("remoteB", out _);
+
+        if (hasOrigin && !hasRemoteB)
+        {
+            return $"origin/{branchName}";
+        }
+
+        if (!hasOrigin && hasRemoteB)
+        {
+            return $"remoteB/{branchName}";
+        }
+
+        if (!hasOrigin || !hasRemoteB)
+        {
+            return null;
+        }
+
+        var comparisonOutput = await RunGitAsync(
+            repoPath,
+            "rev-list",
+            "--left-right",
+            "--count",
+            $"origin/{branchName}...remoteB/{branchName}");
+
+        var counts = comparisonOutput
+            .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        if (counts.Length != 2
+            || !int.TryParse(counts[0], out var originOnlyCommits)
+            || !int.TryParse(counts[1], out var remoteBOnlyCommits))
+        {
+            throw new Exception($"Failed to compare branch tips for '{branchName}'.");
+        }
+
+        if (originOnlyCommits == 0 && remoteBOnlyCommits == 0)
+        {
+            return $"origin/{branchName}";
+        }
+
+        if (originOnlyCommits == 0)
+        {
+            _logger.LogInformation(
+                "Branch {Branch} is ahead on remoteB by {Count} commit(s); using remoteB as source.",
+                branchName,
+                remoteBOnlyCommits);
+            return $"remoteB/{branchName}";
+        }
+
+        if (remoteBOnlyCommits == 0)
+        {
+            _logger.LogInformation(
+                "Branch {Branch} is ahead on origin by {Count} commit(s); using origin as source.",
+                branchName,
+                originOnlyCommits);
+            return $"origin/{branchName}";
+        }
+
+        throw new Exception(
+            $"Branch '{branchName}' has diverged between origin and remoteB. Manual reconciliation is required before sync can continue safely.");
     }
 
     private async Task PushAllRefsAsync(string repoPath, string remoteName)
     {
-        await RunGitAsync(repoPath, "push", remoteName, "--all");
+        await RunGitAsync(repoPath, "push", "--prune", remoteName, "refs/heads/*:refs/heads/*");
         await RunGitAsync(repoPath, "push", remoteName, "--tags");
     }
 

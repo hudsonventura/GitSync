@@ -1,14 +1,14 @@
 # GitSync
 
-A .NET console application that **bidirectionally mirrors** git repositories between platforms (GitHub, Gitea, GitLab, Azure DevOps). It replicates all repositories — public and private — preserving their visibility when the provider supports per-repository visibility, and automatically creates new repositories on the other side when they appear.
+A .NET console application that **bidirectionally mirrors** git repositories between platforms (GitHub, Gitea, GitLab, Azure DevOps). It replicates all repositories — public and private — preserving their visibility when the provider supports per-repository visibility, automatically creates new repositories on the other side when they appear, and synchronizes all available branches between both repositories.
 
 ## Features
 
-- **Bidirectional sync**: repositories are mirrored in both directions
+- **Bidirectional sync**: repositories are mirrored in both directions, including all available branches
 - **Multi-platform**: supports GitHub, Gitea, GitLab, and Azure DevOps
 - **Preserves visibility**: public repos stay public, private repos stay private
 - **Auto-create**: new repositories are automatically created on the other provider
-- **Full mirror**: all branches, tags, and refs are synchronized
+- **Full mirror**: all branches, tags, and refs are synchronized, and missing branches are created automatically
 - **Docker ready**: includes Dockerfile and docker-compose.yml
 - **Continuous sync**: runs in a loop with configurable interval
 
@@ -18,7 +18,7 @@ The application uses an `IGitProvider` interface, making it easy to add new prov
 
 1. Lists all repositories from both providers
 2. Creates missing repositories on each side (preserving visibility)
-3. Performs `git clone --mirror` / `git fetch` + `git push --mirror` for full bidirectional sync
+3. Fetches both remotes, reconciles all available branches, creates missing branches locally and remotely when needed, and pushes branches/tags back to both sides
 
 ```
 Provider A (e.g., GitHub)  <──────>  GitSync  <──────>  Provider B (e.g., Gitea)

@@ -45,7 +45,11 @@ public class SyncService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to fetch repositories from {Provider}", _providerA.ProviderName);
+            _logger.LogError(
+                ex,
+                "Failed to fetch repositories from {Provider}: {Error}",
+                _providerA.ProviderName,
+                ex.Message);
             return;
         }
 
@@ -55,7 +59,11 @@ public class SyncService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to fetch repositories from {Provider}", _providerB.ProviderName);
+            _logger.LogError(
+                ex,
+                "Failed to fetch repositories from {Provider}: {Error}",
+                _providerB.ProviderName,
+                ex.Message);
             return;
         }
 
@@ -111,7 +119,11 @@ public class SyncService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "[{Repo}] Failed to sync repository", repoName);
+                _logger.LogError(
+                    ex,
+                    "[{Repo}] Failed to sync repository: {Error}",
+                    repoName,
+                    ex.Message);
                 errors++;
             }
         }
