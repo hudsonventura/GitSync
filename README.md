@@ -35,10 +35,52 @@ The application uses an `IGitProvider` interface, making it easy to add new prov
 
 ```
 Provider A (e.g., GitHub)  <──────>  GitSync  <──────>  Provider B (e.g., Gitea)
-         ▲                                                      ▲
+         ▲                                                       ▲
          │              Bare repos stored locally                │
          └───────────── /data/repos/ (local copy) ───────────────┘
 ```
+
+---
+
+
+# Getting Started
+
+
+1. Clone this repository:
+   ```bash
+   git clone https://github.com/hudsonventura/GitSync.git
+   cd gitsync
+   ```
+
+2. Create a `.env` file in the project root with your configuration. Look at the section below to see how to generate the many kind of tokens in each git provider.
+   ```dotenv
+   PROVIDER_A_TYPE=github
+   PROVIDER_A_TOKEN=ghp_your_github_token
+   PROVIDER_A_USERNAME=your_github_user
+
+   PROVIDER_B_TYPE=gitea
+   PROVIDER_B_URL=https://gitea.example.com
+   PROVIDER_B_TOKEN=your_gitea_token
+   PROVIDER_B_USERNAME=your_gitea_user
+
+   SYNC_INTERVAL_SECONDS=300
+   LOG_LEVEL=Information
+   ```
+
+3. `docker-compose.yml` already references this file through `env_file: .env`, so you do not need to declare each environment variable inside the Compose file.
+
+4. Start the service:
+   ```bash
+   docker compose up -d
+   ```
+
+5. Check the logs:
+   ```bash
+   docker compose logs -f gitsync
+   ```
+
+6. Keep it running
+   ```
 
 ---
 
@@ -130,45 +172,7 @@ All configuration is done via environment variables:
 
 ---
 
-## Running with Docker Compose (Recommended)
 
-1. Clone this repository:
-   ```bash
-   git clone https://github.com/your-user/gitsync.git
-   cd gitsync
-   ```
-
-2. Create a `.env` file in the project root with your configuration:
-   ```dotenv
-   PROVIDER_A_TYPE=github
-   PROVIDER_A_TOKEN=ghp_your_github_token
-   PROVIDER_A_USERNAME=your_github_user
-
-   PROVIDER_B_TYPE=gitea
-   PROVIDER_B_URL=https://gitea.example.com
-   PROVIDER_B_TOKEN=your_gitea_token
-   PROVIDER_B_USERNAME=your_gitea_user
-
-   SYNC_INTERVAL_SECONDS=300
-   LOG_LEVEL=Information
-   ```
-
-3. `docker-compose.yml` already references this file through `env_file: .env`, so you do not need to declare each environment variable inside the Compose file.
-
-4. Start the service:
-   ```bash
-   docker compose up -d
-   ```
-
-5. Check the logs:
-   ```bash
-   docker compose logs -f gitsync
-   ```
-
-6. Keep it running
-   ```
-
----
 
 ## Running Locally
 
