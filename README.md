@@ -2,6 +2,19 @@
 
 A .NET console application that **bidirectionally mirrors** git repositories between platforms (GitHub, Gitea, GitLab, Azure DevOps). It replicates all repositories — public and private — preserving their visibility when the provider supports per-repository visibility, automatically creates new repositories on the other side when they appear, and synchronizes all available branches between both repositories.
 
+## Why
+
+Your repositories are valuable assets, but access to them is not guaranteed forever on any single platform.
+
+A hosting provider can suspend or ban your account because of company policy, automated abuse detection, billing issues, compliance decisions, internal mistakes, or disputes that take time to resolve. In some regions, government actions, censorship, sanctions, or other authoritarian restrictions can also block access to a service you depend on. Sometimes the problem is less dramatic: an outage, a compromised account, or an accidental deletion is enough to leave you locked out when you need your code most.
+
+That is why it is important to keep more than one copy of your repositories:
+
+- a **local backup** that you control directly
+- an **online backup on a different provider** so you are not dependent on a single company or platform
+
+GitSync helps with exactly that strategy by keeping repositories synchronized across providers while maintaining a local copy you can recover from if one side becomes unavailable.
+
 ## Features
 
 - **Bidirectional sync**: repositories are mirrored in both directions, including all available branches
@@ -24,7 +37,7 @@ The application uses an `IGitProvider` interface, making it easy to add new prov
 Provider A (e.g., GitHub)  <──────>  GitSync  <──────>  Provider B (e.g., Gitea)
          ▲                                                      ▲
          │              Bare repos stored locally                │
-         └──────────────── /data/repos/ ────────────────────────┘
+         └───────────── /data/repos/ (local copy) ───────────────┘
 ```
 
 ---
@@ -125,41 +138,34 @@ All configuration is done via environment variables:
    cd gitsync
    ```
 
-2. Edit `docker-compose.yml` with your configuration:
-   ```yaml
-   services:
-     gitsync:
-       build: .
-       environment:
-         - PROVIDER_A_TYPE=github
-         - PROVIDER_A_TOKEN=ghp_your_github_token
-         - PROVIDER_A_USERNAME=your_github_user
-         - PROVIDER_B_TYPE=gitea
-         - PROVIDER_B_URL=https://gitea.example.com
-         - PROVIDER_B_TOKEN=your_gitea_token
-         - PROVIDER_B_USERNAME=your_gitea_user
-         - SYNC_INTERVAL_SECONDS=300
-       volumes:
-         - repos_data:/data/repos
-       restart: unless-stopped
-   
-   volumes:
-     repos_data:
+2. Create a `.env` file in the project root with your configuration:
+   ```dotenv
+   PROVIDER_A_TYPE=github
+   PROVIDER_A_TOKEN=ghp_your_github_token
+   PROVIDER_A_USERNAME=your_github_user
+
+   PROVIDER_B_TYPE=gitea
+   PROVIDER_B_URL=https://gitea.example.com
+   PROVIDER_B_TOKEN=your_gitea_token
+   PROVIDER_B_USERNAME=your_gitea_user
+
+   SYNC_INTERVAL_SECONDS=300
+   LOG_LEVEL=Information
    ```
 
-3. Start the service:
+3. `docker-compose.yml` already references this file through `env_file: .env`, so you do not need to declare each environment variable inside the Compose file.
+
+4. Start the service:
    ```bash
    docker compose up -d
    ```
 
-4. Check the logs:
+5. Check the logs:
    ```bash
    docker compose logs -f gitsync
    ```
 
-5. Stop the service:
-   ```bash
-   docker compose down
+6. Keep it running
    ```
 
 ---
@@ -167,7 +173,7 @@ All configuration is done via environment variables:
 ## Running Locally
 
 ### Prerequisites
-- [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
+- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
 - [Git](https://git-scm.com/) installed and available in PATH
 
 ### Steps
